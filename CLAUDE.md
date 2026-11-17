@@ -1,6 +1,6 @@
 # LAY — memoria del proyecto para Claude Code
 
-LAY es el asistente personal de Robert (tipo Jarvis): monitorea y controla su PC con Windows 11 y varios monitores, conversa por voz en español peruano y reconoce gestos de mano por cámara. Evoluciona su app "Centro de Mando" (Flet), donde antes se llamaba JARVIS.
+LAY es el asistente personal de brother (tipo Jarvis): monitorea y controla su PC con Windows 11 y varios monitores, conversa por voz en español peruano y reconoce gestos de mano por cámara. Evoluciona su app "Centro de Mando" (Flet), donde antes se llamaba JARVIS.
 
 ## Arquitectura (no romper)
 ```
