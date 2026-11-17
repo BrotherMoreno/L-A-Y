@@ -1,0 +1,412 @@
+"""LOOP 0 — Hub de eventos (siempre encendido).
+
+  python -m loops.hub
+
+- WebSocket /ws      -> overlay/HUD se suscribe y recibe todo.
+- POST /evento       -> MCP, voz y gestos publican.
+- POST /api/comando  -> texto para LAY (local, o remoto desde el celular con token).
+- GET  /archivo      -> sirve imágenes locales al overlay (solo rutas permitidas).
+- GET  /             -> sirve el overlay (overlay/index.html).
+- /api/config, /api/ia/*  -> Configuración dentro de la app (solo desde esta PC).
+- GET  /remoto       -> página para el celular (Tailscale + token).
+
+SEGURIDAD: desde esta PC (127.0.0.1) todo está permitido. Desde fuera SOLO /remoto,
+/api/comando y /ws en modo lectura, siempre con token, y por defecto solo por Tailscale.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import json
+import os
+import secrets
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
+
+from lay_core.config import CONFIG, ROOT
+from lay_core.seguridad import ruta_permitida
+
+app = FastAPI(title="LAY hub")
+clientes: set[WebSocket] = set()
+remotos: set[WebSocket] = set()  # celulares: solo reciben, nunca envían eventos
+cola_comandos: asyncio.Queue = asyncio.Queue()
+
+TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
+RUTAS_REMOTAS = {"/remoto", "/api/comando", "/api/remoto/ping"}
+
+
+def es_local(host: str | None) -> bool:
+    try:
+        return ipaddress.ip_address(host or "").is_loopback
+    except ValueError:
+        return host in ("testclient", "localhost")
+
+
+def token_valido(recibido: str | None) -> bool:
+    esperado = os.environ.get("LAY_HUB_TOKEN", "")
+    return bool(esperado) and bool(recibido) and secrets.compare_digest(recibido.strip(), esperado)
+
+
+def motivo_rechazo_remoto(host: str | None, ruta: str, token: str | None) -> str | None:
+    """None si se permite. Reglas para conexiones que NO vienen de esta PC."""
+    if not CONFIG.remoto.get("activo"):
+        return "El acceso remoto está desactivado (Configuración → Remoto)."
+    if CONFIG.remoto.get("solo_tailscale", True):
+        try:
+            if ipaddress.ip_address(host or "") not in TAILSCALE:
+                return "Solo se permite desde Tailscale."
+        except ValueError:
+            return "Origen desconocido."
+    if ruta not in RUTAS_REMOTAS and ruta != "/ws":
+        return "Ruta no disponible en remoto."
+    if ruta != "/remoto" and not token_valido(token):
+        return "Token inválido."
+    return None
+
+
+@app.middleware("http")
+async def guardia(request: Request, call_next):
+    host = request.client.host if request.client else None
+    if not es_local(host):
+        token = request.headers.get("authorization", "").removeprefix("Bearer ") or request.query_params.get("token")
+        motivo = motivo_rechazo_remoto(host, request.url.path, token)
+        if motivo:
+            return JSONResponse({"error": motivo}, status_code=403)
+    return await call_next(request)
+
+
+# Cada cliente tiene su cola y su tarea de envío: un cliente lento (o uno que no lee) ya no traba
+# al resto. Si su cola se llena se descartan los mensajes más viejos (los cuadros de manos caducan rápido).
+colas: dict = {}
+filtros: dict = {}  # ws -> prefijos de "tipo" que quiere recibir (vacío = todo)
+COLA_MAX = 48
+
+
+async def _enviar_cola(ws: WebSocket, cola: asyncio.Queue) -> None:
+    try:
+        while True:
+            await ws.send_text(await cola.get())
+    except Exception:
+        clientes.discard(ws)
+
+
+def _registrar(ws: WebSocket, prefijos: str | None) -> asyncio.Task:
+    cola: asyncio.Queue = asyncio.Queue(maxsize=COLA_MAX)
+    colas[ws] = cola
+    filtros[ws] = tuple(p for p in (prefijos or "").split(",") if p)
+    clientes.add(ws)
+    if any(p.startswith("gestos") for p in filtros[ws]):
+        while _pendientes_gestos:  # la cámara acaba de conectarse: entrenar lo que se pidió
+            cola.put_nowait(json.dumps(_pendientes_gestos.pop(0), ensure_ascii=False))
+    return asyncio.create_task(_enviar_cola(ws, cola))
+
+
+def _olvidar(ws: WebSocket) -> None:
+    clientes.discard(ws)
+    remotos.discard(ws)
+    colas.pop(ws, None)
+    filtros.pop(ws, None)
+
+
+async def difundir(evento: dict) -> None:
+    msg = json.dumps(evento, ensure_ascii=False)
+    tipo = str(evento.get("tipo", ""))
+    for ws in list(clientes):
+        f = filtros.get(ws)
+        if f and not tipo.startswith(f):
+            continue
+        cola = colas.get(ws)
+        if cola is None:  # cliente registrado a la antigua (tests)
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                clientes.discard(ws)
+            continue
+        if tipo in ("manos", "hud.fps", "cursor") and cola.qsize() > 4:
+            continue  # cliente atrasado: se salta cuadros de manos, nunca eventos importantes
+        while True:
+            try:
+                cola.put_nowait(msg)
+                break
+            except asyncio.QueueFull:
+                try:
+                    cola.get_nowait()  # se pierde el más viejo, nunca se bloquea
+                except asyncio.QueueEmpty:
+                    break
+
+
+@app.websocket("/ws")
+async def ws(ws: WebSocket):
+    host = ws.client.host if ws.client else None
+    remoto = not es_local(host)
+    if remoto and motivo_rechazo_remoto(host, "/ws", ws.query_params.get("token")):
+        await ws.close(code=4403)
+        return
+    await ws.accept()
+    tarea = _registrar(ws, ws.query_params.get("tipos"))
+    if remoto:
+        remotos.add(ws)
+    try:
+        while True:
+            # El overlay también publica (ej. "overlay.fling" para mandar imagen a otro monitor)
+            texto = await ws.receive_text()
+            if remoto:
+                continue  # un celular no puede abrir archivos ni mover ventanas por el WS
+            try:
+                data = json.loads(texto)
+                if not isinstance(data, dict) or "tipo" not in data:
+                    continue  # basura: se ignora sin tumbar la conexión
+                await manejar_evento_overlay(data)
+            except Exception as exc:  # un evento que falla (p. ej. abrir un archivo) no desconecta el HUD
+                await difundir({"tipo": "hud.error", "detalle": f"{type(exc).__name__}: {exc}"[:200]})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        tarea.cancel()
+        _olvidar(ws)
+
+
+# ---------- cámara bajo demanda: solo corre cuando Robert la pide ("LAY, activa la cámara") ----------
+_camara: dict = {"proc": None}
+_pendientes_gestos: list = []
+
+
+def camara(accion: str) -> dict:
+    from lay_core import procesos
+
+    p = _camara["proc"]
+    viva = p is not None and p.poll() is None
+    if accion == "estado":
+        return {"camara": viva}
+    if accion == "alternar":
+        accion = "apagar" if viva else "encender"
+    if accion == "encender":
+        if not viva:
+            _camara["proc"] = procesos.lanzar_rol("gestos")
+        return {"camara": True}
+    if viva:
+        p.terminate()
+    _camara["proc"] = None
+    return {"camara": False}
+
+
+async def manejar_evento_overlay(ev: dict) -> None:
+    from lay_core import escritorio
+
+    if ev.get("tipo") == "overlay.fling":
+        # Gesto SNAP/swipe: abre la imagen de verdad y la manda al monitor destino
+        # El monitor destino es el vecino real (izq/der) del monitor donde está el cursor
+        monitor = ev.get("monitor") or await asyncio.to_thread(
+            escritorio.monitor_vecino, ev.get("direccion", "derecha")
+        )
+        await asyncio.to_thread(escritorio.abrir, ev["ruta"])
+        r = await asyncio.to_thread(
+            escritorio.mover_ventana, Path(ev["ruta"]).name, monitor, ev.get("posicion", "maximizada")
+        )
+        ev = {**ev, "monitor": monitor, "resultado": r}
+    elif ev.get("tipo") == "overlay.abrir_archivo":
+        await asyncio.to_thread(escritorio.abrir_seguro, ev["ruta"])  # nunca rutas prohibidas
+    elif ev.get("tipo") in ("camara.encender", "camara.apagar", "camara.alternar"):
+        ev = {**ev, **camara(ev["tipo"].split(".")[1])}
+        if not ev["camara"]:
+            await difundir({"tipo": "manos", "manos": {}})  # que no queden manos congeladas en pantalla
+        await difundir({"tipo": "hud.camara", "ok": ev["camara"], "pausada": not ev["camara"]})
+    elif ev.get("tipo") == "gestos.entrenar":
+        if not camara("estado")["camara"] or not any("gestos." in f for f in filtros.values() if f):
+            _pendientes_gestos.append(ev)  # se entrega cuando el proceso de la cámara se conecte
+            camara("encender")
+            await difundir({"tipo": "hud.camara", "ok": True, "pausada": False})
+            await difundir({**ev, "tipo": "gesto.entrenando", "fase": "encendiendo"})
+            return
+    elif ev.get("tipo") == "gesto.propio":
+        accion = ev.get("accion") or {}
+        if accion.get("tipo") == "orden" and accion.get("valor"):
+            await cola_comandos.put(str(accion["valor"])[:300])  # va por el mismo camino que la voz
+    await difundir(ev)
+
+
+# ---------- modo chat: historial de la conversación (también en ~/.lay/chat.jsonl) ----------
+_chat: list[dict] = []
+
+
+def _guardar_chat(ev: dict) -> None:
+    from lay_core.config import DATA_DIR
+
+    m = {k: ev.get(k) for k in ("rol", "texto", "via", "entendido", "segundos", "aprendio")}
+    m["t"] = int(__import__("time").time())
+    _chat.append(m)
+    del _chat[:-300]
+    try:
+        with (DATA_DIR / "chat.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(m, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def historial_chat(n: int = 80) -> list[dict]:
+    if not _chat:
+        from lay_core.config import DATA_DIR
+
+        try:
+            lineas = (DATA_DIR / "chat.jsonl").read_text(encoding="utf-8").splitlines()[-300:]
+            _chat.extend(json.loads(x) for x in lineas if x.strip())
+        except (OSError, ValueError):
+            pass
+    return _chat[-n:]
+
+
+@app.post("/evento")
+async def evento(ev: dict):
+    if ev.get("tipo") == "chat.mensaje":
+        historial_chat(1)  # carga lo anterior una vez
+        _guardar_chat(ev)
+    if str(ev.get("tipo", "")).startswith(("camara.", "gesto.propio", "gestos.entrenar")):
+        await manejar_evento_overlay(ev)
+    else:
+        await difundir(ev)
+    return {"ok": True, "clientes": len(clientes)}
+
+
+@app.post("/api/comando")
+async def comando(body: dict, request: Request):
+    """{"texto": "abre mi workspace de trabajo"}. Lo consume loops/voz.py (la guardia ya validó origen/token)."""
+    texto = str(body.get("texto", "")).strip()[:500]
+    if not texto:
+        raise HTTPException(400, "texto vacío")
+    await cola_comandos.put(texto)
+    origen = "local" if es_local(request.client.host if request.client else None) else "remoto"
+    await difundir({"tipo": "remoto.comando", "texto": texto, "origen": origen})
+    return {"ok": True}
+
+
+@app.get("/api/remoto/ping")
+async def remoto_ping():
+    return {"ok": True, "nombre": CONFIG.nombre}
+
+
+@app.get("/api/ping")
+async def ping():
+    return {"ok": True}
+
+
+@app.get("/api/comando/siguiente")
+async def siguiente():
+    try:
+        return {"texto": cola_comandos.get_nowait()}
+    except asyncio.QueueEmpty:
+        return {"texto": None}
+
+
+EXT_IMAGEN = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+
+def _imagen_valida(ruta: str) -> Path:
+    p = Path(ruta)
+    if not (p.is_file() and ruta_permitida(p) and p.suffix.lower() in EXT_IMAGEN):
+        raise HTTPException(404)
+    return p
+
+
+@app.get("/api/explorar")
+async def explorar(ruta: str | None = None):
+    """Explorador holográfico: subcarpetas + imágenes de una carpeta (solo local, lo filtra la guardia)."""
+    from lay_core import archivos
+
+    return await asyncio.to_thread(archivos.explorar, ruta)
+
+
+@app.get("/archivo")
+async def archivo(ruta: str):
+    return FileResponse(_imagen_valida(ruta))
+
+
+def miniatura_de(p: Path, ancho: int) -> Path:
+    """JPEG reducido y cacheado en ~/.lay/cache (clave: ruta + fecha + ancho).
+    24 fotos de 12 MP a tamaño completo traban el HUD; las miniaturas pesan ~40 KB."""
+    import hashlib
+
+    from PIL import Image, ImageOps
+
+    from lay_core.config import DATA_DIR
+
+    st = p.stat()
+    clave = hashlib.sha1(f"{p.resolve()}|{st.st_mtime_ns}|{ancho}".encode()).hexdigest()[:20]
+    destino = DATA_DIR / "cache" / f"{clave}.jpg"
+    if not destino.exists():
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(p) as im:
+            im = ImageOps.exif_transpose(im)  # fotos de celular giradas
+            im.thumbnail((ancho, ancho))
+            im.convert("RGB").save(destino, "JPEG", quality=82)
+    return destino
+
+
+@app.get("/miniatura")
+async def miniatura(ruta: str, w: int = 480):
+    p = _imagen_valida(ruta)
+    try:
+        return FileResponse(await asyncio.to_thread(miniatura_de, p, max(64, min(w, 1600))))
+    except Exception:
+        return FileResponse(p)  # formato raro: la original
+
+
+@app.get("/")
+async def index():
+    return FileResponse(ROOT / "overlay" / "index.html")
+
+
+@app.get("/remoto")
+async def pagina_remota():
+    return FileResponse(ROOT / "overlay" / "remoto.html")
+
+
+@app.on_event("startup")
+async def _tareas_de_fondo():
+    asyncio.create_task(_recordatorios())
+
+
+@app.on_event("shutdown")
+async def _apagar_camara():
+    camara("apagar")
+
+
+async def _recordatorios():
+    """Cada 15 s: lo que toca se dice en voz alta, sale en el HUD y como notificación de Windows."""
+    from lay_core import recordatorios
+
+    while True:
+        try:
+            for r in await asyncio.to_thread(recordatorios.vencidos):
+                await difundir({"tipo": "voz.decir", "texto": f"Recordatorio: {r['mensaje']}"})
+                await difundir(
+                    {
+                        "tipo": "hud.panel",
+                        "titulo": "Recordatorio",
+                        "items": [{"titulo": r["mensaje"], "etiqueta": "ahora"}],
+                        "segundos": 60,
+                    }
+                )
+                await asyncio.to_thread(recordatorios.notificar_windows, "LAY · Recordatorio", r["mensaje"])
+        except Exception:
+            pass
+        await asyncio.sleep(15)
+
+
+from loops import hub_api  # noqa: E402  (registra /api/config, /api/ia/*, /api/remoto/*)
+
+hub_api.registrar(app, difundir)
+
+
+def direccion_de_escucha() -> str:
+    """127.0.0.1 salvo que el remoto esté activo (entonces todas las interfaces; la guardia filtra)."""
+    if os.getenv("LAY_BIND"):
+        return os.environ["LAY_BIND"]
+    return "0.0.0.0" if CONFIG.remoto.get("activo") else CONFIG.hub_host
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=direccion_de_escucha(), port=CONFIG.hub_port, log_level="warning")

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAY — Interfaz holográfica</title>
+<style>
+:root{--bg:#020b11;--cyan:#65f4ff;--ice:#bafaff;--violet:#9a62ff;--warn:#ffb547}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#d9fbff;font-family:Inter,Segoe UI,Arial,sans-serif;overflow:hidden}
+body{background:radial-gradient(ellipse at 50% 48%,rgba(0,156,190,.15),transparent 35%),radial-gradient(ellipse at 50% 50%,#061b25 0%,#020b11 62%,#01060a 100%)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.25;background-image:linear-gradient(rgba(70,207,230,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(70,207,230,.12) 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(ellipse,black,transparent 78%)}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.12;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(110,238,255,.15) 4px,transparent 5px)}
+.corner{position:fixed;color:rgba(111,227,246,.6);font:10px/1.7 Consolas,monospace;letter-spacing:2px;text-transform:uppercase;z-index:5}
+.tl{top:24px;left:28px;border-left:2px solid var(--cyan);padding:6px 12px}.tr{top:24px;right:28px;text-align:right}
+.bl{bottom:22px;left:28px}.br{bottom:22px;right:28px;text-align:right}
+.status{color:var(--cyan);text-shadow:0 0 10px var(--cyan)}
+.opus{color:var(--violet);text-shadow:0 0 10px var(--violet)}
+/* núcleo */
+.core{position:fixed;left:50%;top:50%;width:min(46vmin,460px);aspect-ratio:1;transform:translate(-50%,-50%);display:grid;place-items:center}
+.core:before{content:"";position:absolute;inset:-12%;border-radius:50%;background:radial-gradient(circle,rgba(25,204,235,.16),transparent 62%);opacity:.6;transition:opacity .4s}
+.ring{position:absolute;border-radius:50%}
+.r1{inset:0;border:2px solid rgba(91,231,248,.7);animation:breathe 4s ease-in-out infinite}
+.r1:before{content:"";position:absolute;inset:12px;border-radius:50%;border:1px dashed rgba(104,236,255,.6);animation:spin 42s linear infinite}
+.r2{inset:8%;border:13px solid transparent;border-top-color:#39d9f2;border-right-color:#137ca5;border-bottom-color:#a3faff;border-left-color:#126987;animation:spin 16s linear infinite}
+.r3{inset:21%;border:2px solid rgba(107,239,255,.8);animation:breathe 2.8s ease-in-out infinite}
+.ticks{position:absolute;inset:3%;border-radius:50%;background:repeating-conic-gradient(rgba(120,240,255,.8) 0 .45deg,transparent .55deg 4deg);mask:radial-gradient(circle,transparent 67%,#000 68% 72%,transparent 73%);opacity:.7;animation:spin 70s linear infinite}
+.arc{position:absolute;inset:14%;border-radius:50%;border:5px solid transparent;border-top-color:#e2ffff;border-left-color:rgba(42,196,229,.7);animation:spin 10s linear infinite}
+.center{position:relative;width:48%;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 50% 45%,rgba(18,87,111,.55),rgba(2,12,20,.96) 68%);border:1px solid rgba(135,245,255,.35)}
+.brand{font-size:clamp(28px,5vmin,54px);font-weight:800;letter-spacing:.16em;color:#e9ffff;text-shadow:0 0 8px #fff,0 0 22px #55eaff,0 0 42px #19b8e8}
+.sub{position:absolute;bottom:22%;font:9px Consolas,monospace;letter-spacing:3px;color:#62dff3}
+body.escuchando .core:before{opacity:1}
+body.pensando .r2{animation-duration:2.5s}body.pensando .arc{animation-duration:1.6s}
+body.hablando .r3{animation:talk .35s ease-in-out infinite alternate}
+body.abierto .core:before{opacity:.85}body.abierto .r1{border-color:#e2ffff}
+body.opus .r2{border-top-color:var(--violet);border-bottom-color:#d6c2ff}
+/* transcripción */
+#dialogo{position:fixed;left:50%;bottom:9%;transform:translateX(-50%);width:min(760px,86vw);text-align:center;font-size:15px;line-height:1.5;z-index:6}
+#dialogo .yo{color:rgba(186,250,255,.6);font-size:12px;letter-spacing:1px}
+#dialogo .lay{color:#e9ffff;text-shadow:0 0 12px rgba(101,244,255,.5)}
+/* tarjetas */
+#mesa{position:fixed;inset:0;perspective:1400px;z-index:3}
+.card{position:absolute;left:0;top:0;width:220px;height:150px;border-radius:10px;overflow:hidden;border:1px solid rgba(120,240,255,.55);box-shadow:0 0 10px rgba(38,216,247,.3);background:#031722;transform-origin:center;contain:layout paint;transition:opacity .3s}
+.card img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.card:after{content:attr(data-nombre);position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font:9px Consolas,monospace;letter-spacing:1px;color:#aaf8ff;background:linear-gradient(transparent,rgba(2,12,20,.9))}
+.card.hover{box-shadow:0 0 18px rgba(101,244,255,.8);border-color:#e2ffff}
+.card.agarrada{will-change:transform;box-shadow:0 0 24px #e2ffff;border-color:#e2ffff;z-index:20}
+.card.abierta{z-index:15;will-change:transform}
+.card.lanzada{opacity:0}
+/* manos */
+#manos{position:fixed;inset:0;z-index:8;pointer-events:none}
+.cursor{position:fixed;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:2px solid var(--cyan);box-shadow:0 0 14px var(--cyan);z-index:9;pointer-events:none;transition:width .12s,height .12s,margin .12s,background .12s;display:none}
+.cursor.pinch{width:18px;height:18px;margin:-9px 0 0 -9px;background:rgba(226,255,255,.85)}
+#panel{position:fixed;right:28px;top:140px;width:min(380px,30vw);max-height:62vh;overflow:hidden;padding:14px 16px;background:rgba(2,16,24,.88);border:1px solid rgba(101,244,255,.35);box-shadow:0 0 24px rgba(38,216,247,.2);z-index:7;transform:translateX(120%);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+#panel.visible{transform:none}
+#panel h3{margin:0 0 10px;font:11px Consolas,monospace;letter-spacing:3px;color:var(--cyan)}
+#panel .it{padding:7px 0;border-top:1px solid rgba(101,244,255,.12)}
+#panel .t{font-size:13px;color:#e9ffff;line-height:1.35}#panel .d{font-size:11px;color:rgba(186,250,255,.6);margin-top:2px}
+#panel .e{float:right;font:9px Consolas,monospace;letter-spacing:1px;padding:2px 6px;border:1px solid rgba(101,244,255,.4);color:var(--cyan);margin-left:8px}
+#panel .e.urg{border-color:var(--warn);color:var(--warn)}
+#toast{position:fixed;bottom:17%;left:50%;transform:translateX(-50%);font:11px Consolas,monospace;letter-spacing:3px;color:var(--cyan);text-shadow:0 0 10px var(--cyan);opacity:0;transition:opacity .3s;z-index:10}
+#ayuda{position:fixed;left:50%;top:62px;transform:translateX(-50%);width:min(860px,70vw);padding:6px 14px;background:rgba(2,16,24,.85);border:1px solid rgba(101,244,255,.25);text-align:center;font:9px/1.7 Consolas,monospace;letter-spacing:1px;color:rgba(133,227,243,.6);z-index:5;transition:opacity .8s}
+#ayuda.oculta{opacity:0;pointer-events:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes breathe{0%,100%{opacity:.7}50%{opacity:1}}
+@keyframes talk{from{transform:scale(.96)}to{transform:scale(1.06)}}
+
+/* ---------- Configuración ---------- */
+#engranaje{position:fixed;top:22px;left:50%;transform:translateX(-50%);z-index:12;border:1px solid rgba(101,244,255,.4);background:rgba(5,35,47,.75);color:var(--ice);font:10px Consolas,monospace;letter-spacing:3px;padding:8px 16px;cursor:pointer;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+#engranaje:hover{background:rgba(20,133,163,.4);color:#fff}
+#config{position:fixed;inset:0;z-index:30;display:none;place-items:center;background:rgba(1,8,13,.72);backdrop-filter:blur(4px)}
+#config.abierto{display:grid}
+.cfg{width:min(900px,94vw);height:min(640px,90vh);display:grid;grid-template-columns:190px 1fr;background:rgba(2,16,24,.96);border:1px solid rgba(101,244,255,.4);box-shadow:0 0 40px rgba(38,216,247,.25)}
+.cfg nav{border-right:1px solid rgba(101,244,255,.18);padding:18px 0;display:flex;flex-direction:column}
+.cfg nav h2{margin:0 18px 14px;font:11px Consolas,monospace;letter-spacing:4px;color:var(--cyan)}
+.cfg nav button{all:unset;cursor:pointer;padding:11px 18px;font-size:13px;color:rgba(217,251,255,.7);border-left:2px solid transparent}
+.cfg nav button.act{color:#fff;border-left-color:var(--cyan);background:rgba(20,133,163,.18)}
+.cfg nav .pie{margin-top:auto;padding:0 18px;font:9px Consolas,monospace;color:rgba(133,227,243,.4);letter-spacing:1px}
+.cfg section{display:none;padding:22px 26px;overflow-y:auto}.cfg section.act{display:block}
+.cfg h3{margin:0 0 4px;font-size:17px;color:#e9ffff;font-weight:600}.cfg .sub{position:static;bottom:auto;margin:0 0 18px;font:12px/1.5 Inter,Segoe UI,Arial,sans-serif;letter-spacing:0;color:rgba(186,250,255,.55)}
+.cfg label{display:block;font-size:12px;color:rgba(186,250,255,.75);margin:14px 0 6px}
+.cfg input[type=text],.cfg input[type=password],.cfg input[type=number],.cfg select{width:100%;background:rgba(5,35,47,.8);border:1px solid rgba(101,244,255,.3);color:#e9ffff;padding:9px 11px;font-size:13px;outline:none}
+.cfg input:focus,.cfg select:focus{border-color:var(--cyan)}
+.cfg input[type=range]{width:100%;accent-color:var(--cyan)}
+.cfg .btn{display:inline-block;margin:12px 8px 0 0;border:1px solid rgba(100,230,250,.55);background:rgba(20,133,163,.3);color:#fff;padding:9px 16px;font-size:12px;letter-spacing:1px;cursor:pointer}
+.cfg .btn:hover{background:rgba(20,133,163,.55)}.cfg .btn.sec{background:transparent;color:var(--ice)}
+.cfg .btn:disabled{opacity:.45;cursor:default}
+.prov{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.prov label{margin:0;padding:12px;border:1px solid rgba(101,244,255,.22);cursor:pointer;background:rgba(5,35,47,.5)}
+.prov label:has(input:checked){border-color:var(--cyan);background:rgba(20,133,163,.22)}
+.prov b{display:block;color:#e9ffff;font-size:13px;margin-bottom:3px}.prov span{font-size:11px;color:rgba(186,250,255,.6)}
+.prov input{display:none}
+.tarjeta{margin-top:14px;padding:14px;border:1px solid rgba(101,244,255,.2);background:rgba(5,35,47,.45);font-size:12px;line-height:1.6;color:rgba(217,251,255,.85)}
+.barra{height:8px;background:rgba(101,244,255,.12);margin-top:10px;overflow:hidden}.barra i{display:block;height:100%;width:0;background:linear-gradient(90deg,#149bc7,var(--cyan));transition:width .3s}
+.res{margin-top:10px;font-size:12px;min-height:16px}.res.ok{color:#5dffb0}.res.mal{color:var(--warn)}
+.fila{display:flex;gap:10px;align-items:center}.fila>*{flex:1}
+.interruptor{display:flex!important;align-items:center;gap:10px;cursor:pointer}.interruptor input{width:18px;height:18px;accent-color:var(--cyan)}
+.cerrar{position:absolute;top:14px;right:18px;background:none;border:none;color:var(--ice);font-size:22px;cursor:pointer}
+.cfg ol{margin:6px 0 0;padding-left:18px}.cfg a{color:var(--cyan)}
+#qr{margin-top:12px;background:#fff;padding:8px;width:200px;display:none}
+/* explorador holográfico + escaneo de manos */
+.card{pointer-events:auto;cursor:pointer}
+.card.carpeta,.card.atras,.card.cerrar{display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,rgba(38,216,247,.22),#031722 70%)}
+.card .ico{width:76px;height:54px;position:relative;border:2px solid var(--cyan);border-radius:4px 8px 8px 8px;box-shadow:0 0 10px rgba(38,216,247,.5);margin-bottom:22px}
+.card .ico:before{content:"";position:absolute;left:-2px;top:-12px;width:32px;height:10px;border:2px solid var(--cyan);border-bottom:0;border-radius:4px 8px 0 0}
+.card .ico:after{content:"";position:absolute;inset:8px;background:repeating-linear-gradient(0deg,rgba(101,244,255,.25) 0 1px,transparent 1px 6px)}
+.card.atras .ico,.card.cerrar .ico{display:none}
+.card.atras .big,.card.cerrar .big{font:34px Consolas,monospace;color:var(--cyan);text-shadow:0 0 14px var(--cyan);margin-bottom:18px}
+.card.entrando{animation:entrar .45s cubic-bezier(.2,.8,.2,1) both}
+@keyframes entrar{from{opacity:0}to{opacity:1}}
+#ruta{position:fixed;top:64px;left:50%;transform:translateX(-50%);font:11px Consolas,monospace;letter-spacing:3px;color:var(--cyan);text-shadow:0 0 10px var(--cyan);z-index:6;display:none;max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.explorando #ruta{display:block}
+body.explorando #ayuda,body.escaneando #ayuda{opacity:0;pointer-events:none}
+body.explorando .core{opacity:.25;transition:opacity .5s}
+body.explorando .core *,body.explorando .core:before,body.oculto *,body.oculto *:before{animation-play-state:paused!important}
+#entreno{position:fixed;left:50%;top:30%;transform:translateX(-50%);z-index:13;text-align:center;font:12px Consolas,monospace;letter-spacing:4px;color:#e2ffff;text-shadow:0 0 12px var(--cyan);display:none}
+#entreno.on{display:block}#entreno .n{font-size:64px;margin:10px 0}#entreno .b{height:4px;width:320px;background:rgba(101,244,255,.15);margin:8px auto}#entreno .b i{display:block;height:100%;width:0;background:var(--cyan);box-shadow:0 0 10px var(--cyan);transition:width .2s}
+.gl{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid rgba(101,244,255,.2);margin:4px 0;font-size:12px}.gl b{color:#e2ffff}.gl button{background:none;border:1px solid rgba(255,120,120,.5);color:#ff9b9b;cursor:pointer;padding:2px 8px}
+#escaneo{position:fixed;inset:0;z-index:12;pointer-events:none;opacity:0;transition:opacity .25s}
+#escaneo.on{opacity:1}
+#escaneo:before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(101,244,255,.06) 0 1px,transparent 1px 4px)}
+#escaneo .barra{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#e2ffff,transparent);box-shadow:0 0 24px #65f4ff;animation:barrer 1.1s linear infinite}
+@keyframes barrer{from{top:8%}to{top:92%}}
+#escaneo .anillo{position:absolute;width:190px;height:190px;margin:-95px 0 0 -95px;border-radius:50%;border:2px dashed rgba(101,244,255,.8);box-shadow:0 0 30px rgba(38,216,247,.5);animation:girar 2.4s linear infinite;transition:left .15s,top .15s}
+@keyframes girar{to{transform:rotate(360deg)}}
+#escaneo .txt{position:absolute;top:20%;left:50%;transform:translateX(-50%);text-align:center;font:12px Consolas,monospace;letter-spacing:5px;color:#e2ffff;text-shadow:0 0 12px var(--cyan)}
+#escaneo .pct{font-size:42px;letter-spacing:4px;margin-top:8px}
+#escaneo.ok .txt{color:#9dffb8;text-shadow:0 0 14px #3dff8a}
+#escaneo.ok .anillo{border-style:solid;border-color:#9dffb8}
+/* modo chat */
+#btnChat{position:fixed;top:22px;left:calc(50% + 120px);z-index:12;border:1px solid rgba(101,244,255,.4);background:rgba(5,35,47,.75);color:var(--ice);font:10px Consolas,monospace;letter-spacing:3px;padding:7px 14px;cursor:pointer}
+#chat{position:fixed;left:24px;top:90px;bottom:90px;width:min(440px,34vw);z-index:11;display:none;flex-direction:column;background:rgba(2,16,24,.92);border:1px solid rgba(101,244,255,.35);box-shadow:0 0 24px rgba(38,216,247,.18)}
+#chat.on{display:flex}
+#chat .cab{padding:10px 14px;font:10px Consolas,monospace;letter-spacing:3px;color:var(--cyan);border-bottom:1px solid rgba(101,244,255,.2);display:flex;justify-content:space-between}
+#chat .cab button{all:unset;cursor:pointer;color:var(--ice)}
+#chatLista{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:88%;padding:8px 11px;font-size:13px;line-height:1.4;color:#e6fdff;border:1px solid rgba(101,244,255,.25);white-space:pre-wrap;word-wrap:break-word}
+.msg.usuario{align-self:flex-end;background:rgba(20,133,163,.28);border-color:rgba(101,244,255,.45)}
+.msg.lay{align-self:flex-start;background:rgba(3,30,42,.85)}
+.msg .meta{margin-top:5px;font:9px Consolas,monospace;letter-spacing:1px;color:rgba(160,240,255,.6);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.msg .meta select{background:#031722;color:var(--ice);border:1px solid rgba(101,244,255,.3);font-size:9px}
+#chatForm{display:flex;border-top:1px solid rgba(101,244,255,.2)}
+#chatTxt{flex:1;background:transparent;border:0;color:#fff;padding:12px;font-size:13px;outline:none}
+#chatForm button{all:unset;cursor:pointer;padding:0 16px;color:var(--cyan);font:11px Consolas,monospace;letter-spacing:2px}
+.cfg nav{overflow-y:auto}
+.lista{margin-top:10px}.lista .gl span{max-width:80%}
+.pers{display:block;padding:8px 10px;border:1px solid rgba(101,244,255,.2);margin:6px 0;cursor:pointer;font-size:12px}
+.pers.act{border-color:var(--cyan);background:rgba(20,133,163,.22)}.pers b{color:#fff}
+.cfg textarea{width:100%;min-height:70px;background:rgba(1,10,15,.8);border:1px solid rgba(101,244,255,.3);color:#fff;padding:8px;font:12px inherit;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div class="corner tl">LAY SYSTEM <span class="status" id="online">● CONECTANDO</span><br>NEURAL CORE // v2.0</div>
+<div class="corner tr">VOZ: <span class="status" id="estadoVoz">STANDBY</span><br>MODELO: <span class="status" id="modelo">—</span></div>
+<div class="corner bl">MODO: <span class="status" id="modo">OVERLAY</span><br>HERRAMIENTA: <span id="tool">—</span></div>
+<div class="corner br">CÁMARA: <span class="status" id="fps">—</span><br>LATENCIA: <span class="status" id="latencia">—</span><br>MANOS: <span class="status" id="nManos">0</span><br>TARJETAS: <span id="nCards">0</span></div>
+
+<section class="core"><div class="ring r1"></div><div class="ticks"></div><div class="ring r2"></div><div class="arc"></div><div class="ring r3"></div>
+  <div class="center"><div class="brand">LAY</div><div class="sub">AI ASSISTANT</div></div></section>
+
+<div id="mesa"></div>
+<canvas id="manos"></canvas>
+<div class="cursor" id="cLeft"></div><div class="cursor" id="cRight"></div>
+<div id="dialogo"><div class="yo" id="yo"></div><div class="lay" id="lay">Di "LAY" para hablarme.</div></div>
+<div id="toast"></div>
+<div id="ruta"></div>
+<div id="entreno"><div id="entTxt">PREPARA TU MANO</div><div class="n" id="entN">2</div><div class="b"><i id="entBar"></i></div><div id="entSub"></div></div>
+<div id="escaneo"><div class="barra"></div><div class="anillo" id="anL"></div><div class="anillo" id="anR"></div>
+  <div class="txt"><div id="escTxt">ESCANEANDO BIOMETRÍA</div><div class="pct" id="escPct">0 %</div></div></div>
+
+<button id="engranaje" title="Configuración (C)">⚙ CONFIGURACIÓN</button>
+<button id="btnChat" title="Modo chat (T)">💬 CHAT</button>
+<div id="chat"><div class="cab"><span>CONVERSACIÓN CON LAY</span><button id="chatCerrar">✕</button></div>
+  <div id="chatLista"></div>
+  <form id="chatForm"><input id="chatTxt" placeholder="Escríbele a LAY… (Enter)" autocomplete="off"><button>ENVIAR</button></form></div>
+<div id="config"><div class="cfg" style="position:relative">
+ <button class="cerrar" data-cerrar>×</button>
+ <nav><h2>CONFIGURACIÓN</h2>
+  <button data-tab="ia" class="act">🧠 Inteligencia</button><button data-tab="universidad">🎓 Universidad</button>
+  <button data-tab="correo">✉ Correo</button><button data-tab="palmadas">👏 Palmadas</button>
+  <button data-tab="aprendizaje">🎓 Aprendizaje</button><button data-tab="personalidad">🎭 Personalidad</button><button data-tab="conocimiento">📚 Conocimiento</button><button data-tab="modelos">🦙 Modelos locales</button><button data-tab="permisos">🛡 Permisos</button><button data-tab="manos">🖐 Manos y gestos</button><button data-tab="voz">🎙 Voz y cámara</button><button data-tab="remoto">📱 Remoto</button>
+  <div class="pie" id="cfgVersion"></div></nav>
+ <div style="overflow:hidden;display:flex">
+ <section data-sec="ia" class="act" style="flex:1"><h3>Inteligencia</h3><p class="sub">Elige qué IA responde. La local es gratis, privada y funciona sin internet.</p>
+  <div class="prov" id="provs"></div>
+  <div id="claveBox" style="display:none"><label id="claveEt">Clave</label><input type="password" id="clave" placeholder="Pega tu clave aquí"><div class="sub" id="claveAyuda" style="margin:6px 0 0"></div></div>
+  <button class="btn" id="guardarIA">Guardar</button><button class="btn sec" id="probarIA">Probar</button><div class="res" id="resIA"></div>
+  <div class="tarjeta" id="localBox"><b style="color:#e9ffff">IA local (Ollama)</b><div id="localInfo">Revisando tu PC…</div>
+   <div class="barra" id="localBarra" style="display:none"><i></i></div><div id="localProg" class="res"></div>
+   <button class="btn" id="instalarIA" disabled>Instalar IA local</button></div>
+  <label class="interruptor" style="margin-top:16px"><input type="checkbox" id="hibrido"> Modo híbrido: las órdenes (abrir, buscar, volumen, carpetas…) las ejecuta LAY Núcleo al instante y la charla la responde la IA elegida</label>
+  <div style="margin-top:10px"><button class="btn sec" id="diagnostico">🩺 Diagnóstico: probar manos, cámara, voz, navegador y Windows</button><div class="res" id="resDiag"></div></div>
+  <label class="interruptor" style="margin-top:16px"><input type="checkbox" id="respaldoPago"> Si la IA gratis falla, usar Claude (de pago) como respaldo</label>
+ </section>
+ <section data-sec="universidad" style="flex:1"><h3>Universidad · Blackboard</h3><p class="sub">LAY lee tus entregas y exámenes desde el calendario de Blackboard. No guarda tu contraseña.</p>
+  <div class="tarjeta"><ol><li>Abre Blackboard → <b>Calendario</b>.</li><li>Toca ⚙ (ajustes) → <b>Compartir calendario</b> / <b>Obtener enlace</b>.</li><li>Copia el enlace (empieza con https:// o webcal://) y pégalo aquí.</li></ol></div>
+  <label>Enlace del calendario <span id="bbActual" style="color:rgba(186,250,255,.45)"></span></label><input type="password" id="bbUrl" placeholder="https://…/calendar….ics">
+  <button class="btn" id="guardarBB">Guardar</button><button class="btn sec" id="probarBB">Probar</button><div class="res" id="resBB"></div>
+ </section>
+ <section data-sec="correo" style="flex:1"><h3>Correo</h3><p class="sub">Gmail y Outlook se conectan con permiso oficial (OAuth). LAY nunca envía sin tu "sí".</p>
+  <label>Gmail · archivo de credenciales (App de escritorio)</label><input type="file" id="gmailJson" accept=".json"><div class="res" id="resGmail"></div>
+  <div class="sub" style="margin-top:6px">Google Cloud → APIs → habilitar Gmail API → Credenciales → ID de cliente OAuth → <b>App de escritorio</b> → Descargar JSON.</div>
+  <label>Outlook · Application (client) ID</label><input type="text" id="outlookId" placeholder="00000000-0000-0000-0000-000000000000">
+  <button class="btn" id="guardarCorreo">Guardar</button><div class="res" id="resCorreo"></div>
+ </section>
+ <section data-sec="palmadas" style="flex:1"><h3>Palmadas</h3><p class="sub">Con LAY instalado, un detector liviano escucha palmadas aunque LAY esté cerrado.</p>
+  <label class="interruptor"><input type="checkbox" id="apActivo"> Activado</label>
+  <div class="tarjeta">👏👏 <b>Doble palmada</b>: abre LAY (o lo trae al frente).<br>👏👏👏 <b>Triple palmada</b>: la acción que elijas abajo.</div>
+  <label>Sensibilidad <span id="apSensV"></span></label><input type="range" id="apSens" min="0" max="1" step="0.05">
+  <div class="sub">Baja si se activa sola con ruidos; sube si no te detecta desde lejos.</div>
+  <label>Triple palmada</label><select id="apTriple"></select>
+  <button class="btn" id="guardarAp">Guardar</button><div class="res" id="resAp"></div>
+ </section>
+ <section data-sec="aprendizaje" style="flex:1"><h3>Aprendizaje</h3><p class="sub">LAY aprende sola: cuando no entiende una orden y la IA grande la resuelve, guarda tu frase y se reentrena cada 5 frases. Corrige lo que entendió desde el modo chat.</p>
+  <div class="res" id="apEstado"></div>
+  <h3 style="margin-top:16px">Atajos de voz</h3><p class="sub">Una frase tuya → una o varias órdenes. También por voz: "LAY, cuando diga modo obra abre Revit y luego abre Excel".</p>
+  <div class="fila"><div><label>Cuando diga…</label><input type="text" id="atFrase" placeholder="modo obra"></div><div><label>…LAY hace (separa con "y luego")</label><input type="text" id="atOrdenes" placeholder="abre revit y luego abre excel"></div></div>
+  <button class="btn" id="atGuardar">Guardar atajo</button><button class="btn sec" id="apReentrenar">Reentrenar ahora</button><div class="res" id="resAt"></div>
+  <div class="lista" id="atLista"></div>
+  <h3 style="margin-top:16px">Frases que aprendió de ti</h3><div class="lista" id="apLista"></div>
+ </section>
+ <section data-sec="personalidad" style="flex:1"><h3>Personalidad</h3><p class="sub">Cambia cómo te habla LAY (sus reglas de seguridad no cambian). Aplica a la IA conversacional.</p>
+  <div id="persLista"></div>
+  <h3 style="margin-top:16px">Crear una propia</h3>
+  <label>Nombre</label><input type="text" id="persNombre" placeholder="Tony">
+  <label>Cómo es y cómo habla</label><textarea id="persDesc" placeholder="Genio sarcástico pero leal, habla rápido, me dice 'jefe', hace chistes de ingeniería…"></textarea>
+  <button class="btn" id="persCrear">Crear y activar</button><div class="res" id="resPers"></div>
+  <h3 style="margin-top:16px">Entrenar el tono (ejemplos)</h3><p class="sub">Para la personalidad activa: cuando digas esto, responde así.</p>
+  <div class="fila"><div><label>Tú dices</label><input type="text" id="persTu" placeholder="oe qué tal"></div><div><label>LAY responde</label><input type="text" id="persLay" placeholder="¡Qué hay, jefe! Listo para la chamba."></div></div>
+  <button class="btn sec" id="persEj">Agregar ejemplo</button>
+ </section>
+ <section data-sec="conocimiento" style="flex:1"><h3>Conocimiento</h3><p class="sub">Dale libros enteros, documentos, apuntes, normas o carpetas de fotos. LAY los lee, los indexa en tu PC y responde con ellos citando la fuente. PDF, EPUB, DOCX, TXT, MD, JPG/PNG.</p>
+  <label>Ruta del archivo o carpeta</label><input type="text" id="conRuta" placeholder="C:\Users\TuUsuario\Documents\Libros\Reglamento Nacional de Edificaciones.pdf">
+  <button class="btn" id="conAgregar">📖 Leer y aprender</button><div class="res" id="resCon"></div>
+  <div class="sub" id="conModo"></div>
+  <div class="lista" id="conLista"></div>
+  <h3 style="margin-top:16px">Probar</h3><div class="fila"><input type="text" id="conPregunta" placeholder="¿Qué dice sobre el recubrimiento mínimo de columnas?"><button class="btn sec" id="conBuscar" style="flex:0">Buscar</button></div>
+  <div class="lista" id="conRes"></div>
+ </section>
+ <section data-sec="modelos" style="flex:1"><h3>Modelos locales (Ollama)</h3><p class="sub">Como Alpaca, pero dentro de LAY: descarga, usa y borra cualquier modelo de ollama.com/library. Gratis y en tu PC.</p>
+  <div class="res" id="resMod"></div>
+  <h3 style="margin-top:12px">Instalados</h3><div class="lista" id="modInst"></div>
+  <h3 style="margin-top:12px">Sugeridos</h3><div class="lista" id="modSug"></div>
+  <label>Otro modelo (nombre exacto de ollama.com)</label><div class="fila"><input type="text" id="modNombre" placeholder="llama3.1:8b"><button class="btn" id="modBajar" style="flex:0">Descargar</button></div>
+ </section>
+ <section data-sec="permisos" style="flex:1"><h3>Permisos de Windows</h3><p class="sub">Qué deja hacer Windows a LAY en esta PC.</p>
+  <div class="lista" id="permEstado"></div>
+  <h3 style="margin-top:16px">Modo administrador</h3><p class="sub">Windows no deja que un programa normal controle ventanas abiertas como administrador (Administrador de tareas, instaladores). Con esto LAY arranca elevado (Windows pide permiso una vez). Las acciones sensibles siguen pidiendo tu "sí". Nadie puede aceptar por ti la ventana de UAC.</p>
+  <button class="btn" id="permActivar">Activar al iniciar Windows</button><button class="btn sec" id="permAhora">Reiniciar LAY como administrador</button><button class="btn sec" id="permQuitar">Desactivar</button><div class="res" id="resPerm"></div>
+ </section>
+ <section data-sec="manos" style="flex:1"><h3>Manos y gestos</h3><p class="sub">La cámara solo se enciende cuando la pides ("LAY, activa la cámara"). Apagada no gasta CPU ni RAM.</p>
+  <div class="fila"><button class="btn" id="camOn">Encender cámara</button><button class="btn sec" id="camOff">Apagar cámara</button></div>
+  <label class="interruptor"><input type="checkbox" id="camInicio"> Encender la cámara al abrir LAY</label>
+  <h3 style="margin-top:18px">Enséñale un gesto</h3><p class="sub">Pon la mano frente a la cámara, haz la pose y mantenla quieta ~2 s. También por voz: "LAY, entrena un gesto para abrir Spotify".</p>
+  <div class="fila"><div><label>¿Qué hace?</label><input type="text" id="gOrden" placeholder="abre spotify · pausa la música · ctrl+alt+t"></div><div><label>Nombre (opcional)</label><input type="text" id="gNombre" placeholder="rock"></div></div>
+  <button class="btn" id="gGrabar">● Grabar gesto</button><div class="res" id="resG"></div>
+  <div id="gLista"></div>
+ </section>
+ <section data-sec="voz" style="flex:1"><h3>Voz y cámara</h3><p class="sub">Cómo te escucha y te habla LAY.</p>
+  <label>Tu nombre</label><input type="text" id="usuario">
+  <label>Voz de LAY</label><select id="vozTts"></select>
+  <label>Sensibilidad de "LAY" <span id="wakeV"></span></label><input type="range" id="wake" min="0.5" max="0.95" step="0.05">
+  <div class="sub">Sube si se activa sola; baja si no te oye.</div>
+  <div class="fila"><div><label>Cámara (n.º)</label><input type="number" id="camara" min="0" max="9"></div><div><label>Micrófono (n.º, vacío = predeterminado)</label><input type="number" id="micro" min="0"></div></div>
+  <label>Navegador</label><select id="navPerfil"><option value="propio">Mi navegador de siempre (mis cuentas y pestañas)</option><option value="lay">Perfil de LAY (puede leer y clicar todo por dentro)</option></select>
+  <button class="btn" id="guardarVoz">Guardar</button><div class="res" id="resVoz"></div>
+ </section>
+ <section data-sec="remoto" style="flex:1"><h3>Control desde el celular</h3><p class="sub">Usa LAY desde fuera de casa de forma privada con Tailscale (gratis).</p>
+  <div class="tarjeta"><ol><li>Instala <b>Tailscale</b> en esta PC y en tu celular, con la misma cuenta.</li><li>Pulsa <b>Activar</b>: se crea un token secreto.</li><li>Escanea el QR con el celular y reinicia LAY.</li></ol></div>
+  <div class="res" id="remInfo"></div>
+  <label class="interruptor"><input type="checkbox" id="soloTs"> Solo permitir conexiones por Tailscale (recomendado)</label>
+  <button class="btn" id="activarRem">Activar / nuevo token</button><button class="btn sec" id="desactivarRem">Desactivar</button>
+  <img id="qr" alt="QR para el celular"><div class="res" id="resRem"></div>
+ </section>
+ </div></div></div>
+<aside id="panel"><h3 id="panelTitulo"></h3><div id="panelItems"></div></aside>
+<div id="ayuda">DOS PALMAS 1s = escaneo y explorador de carpetas · TAP carpeta = entrar · PINCH tarjeta = agarrar · TAP = abrir/cerrar · ARRASTRAR = mover · QUIETO 1s = rotar 3D · DOS MANOS = escalar · CLAP = anillo central · SWIPE = otro monitor · PALMA 1,5s = modo mouse · E explorador · DOS DEDOS = scroll · PUÑO = callar a LAY · PUÑO 2s = pausa · ESC callar · C configuración · R reordenar · D ayuda</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const mesa=$('mesa'),cv=$('manos'),ctx=cv.getContext('2d');
+let W=innerWidth,H=innerHeight,debug=false;
+function resize(){W=innerWidth;H=innerHeight;cv.width=W;cv.height=H}resize();addEventListener('resize',resize);
+
+/* ---------- tarjetas ---------- */
+const cards=[];   // {el,ruta,x,y,s,ry,abierta}
+let agarrada=null,abierta=null,rotando=null,ultimaActiva=null;
+
+function cargar(rutas){cargarItems(rutas.map(r=>({tipo:'imagen',ruta:r})));if(!explorador.activo)toast(`${cards.length} IMÁGENES CARGADAS`)}
+function cargarItems(items){
+  mesa.innerHTML='';cards.length=0;abierta=null;agarrada=null;
+  items.slice(0,30).forEach((it,i)=>{
+    const el=document.createElement('div');el.className='card '+it.tipo+' entrando';el.style.animationDelay=(i*18)+'ms';
+    const nombre=it.nombre||it.ruta.split(/[\\/]/).pop();el.dataset.nombre=nombre.toUpperCase();
+    if(it.tipo==='imagen')el.innerHTML=`<img loading="lazy" src="/miniatura?ruta=${encodeURIComponent(it.ruta)}&w=320" decoding="async">`;
+    else if(it.tipo==='carpeta')el.innerHTML='<div class="ico"></div>';
+    else el.innerHTML=`<div class="big">${it.tipo==='atras'?'◀':it.tipo==='mas'?'▶':'✕'}</div>`;
+    mesa.appendChild(el);
+    const c={el,ruta:it.ruta,tipo:it.tipo,x:0,y:0,s:1,ry:0,abierta:false};el._card=c;cards.push(c);
+  });
+  grilla();$('nCards').textContent=cards.length;
+}
+function celdasLibres(cols,filas,escala){
+  // Celdas de una grilla que NO caen sobre el núcleo central (radio del anillo + margen)
+  const core=document.querySelector('.core').getBoundingClientRect();
+  const R=core.width/2+Math.hypot(110,75)*escala+16, cx=core.x+core.width/2, cy=core.y+core.height/2, out=[];
+  for(let f=0;f<filas;f++)for(let k=0;k<cols;k++){
+    const x=.1+k*(.8/Math.max(cols-1,1)), y=.24+f*(.48/Math.max(filas-1,1));  // libre: ayuda arriba, diálogo abajo
+    if(Math.hypot(x*W-cx,y*H-cy)>R)out.push([x,y]);
+  }
+  return out;
+}
+function grilla(){
+  const n=cards.length;let cols=Math.max(4,Math.ceil(Math.sqrt(n*1.8))),filas=3;
+  const esc=c=>Math.min(.8,W/c/220*.75);  // la tarjeta nunca ocupa más del 75 % de su columna
+  let libres=celdasLibres(cols,filas,esc(cols));
+  while(libres.length<n&&cols<14){cols+=1;filas=Math.min(filas+1,6);libres=celdasLibres(cols,filas,esc(cols))}
+  const s=esc(cols);
+  cards.forEach((c,i)=>{[c.x,c.y]=libres[i];c.s=s;c.ry=0;c.abierta=false;pintar(c)});
+}
+function anillo(){
+  const n=cards.length;cards.forEach((c,i)=>{const a=i/n*Math.PI*2-Math.PI/2;
+    c.x=.5+Math.cos(a)*.33*(H/W);c.y=.5+Math.sin(a)*.33;c.s=.6;c.ry=0;c.abierta=false;pintar(c)});
+  toast('CENTER-STAGE');
+}
+function pintar(c){
+  const w=220*c.s,h=150*c.s;
+  c.el.style.transform=`translate(${c.x*W-110}px,${c.y*H-75}px) scale(${c.s}) rotateY(${c.ry}deg)`;
+  c.el.classList.toggle('abierta',c.abierta);
+}
+function cardEn(x,y){
+  for(let i=cards.length-1;i>=0;i--){const c=cards[i];const hw=110*c.s,hh=75*c.s;
+    if(Math.abs(x*W-c.x*W)<hw&&Math.abs(y*H-c.y*H)<hh)return c}return null;
+}
+function toggleAbrir(c){
+  if(c.tipo&&c.tipo!=='imagen'){activar(c);return}
+  if(c.abierta){c.abierta=false;c.s=c._s||.8;c.x=c._x;c.y=c._y;abierta=null}
+  else{if(abierta)toggleAbrir(abierta);c._s=c.s;c._x=c.x;c._y=c.y;c.abierta=true;c.s=3;c.x=.5;c.y=.5;abierta=c;
+    const img=c.el.querySelector('img');if(!img.dataset.hd){img.dataset.hd=1;img.src=`/miniatura?ruta=${encodeURIComponent(c.ruta)}&w=1600`}}
+  pintar(c);
+}
+
+/* ---------- explorador holográfico ---------- */
+const explorador={activo:false,ruta:null};let carpetaPendiente=null,ultimaMano=0,esperaEscaneo=null;
+async function explorar(ruta){
+  let r;try{r=await (await fetch('/api/explorar'+(ruta?'?ruta='+encodeURIComponent(ruta):''))).json()}catch(e){toast('NO PUDE LEER LA CARPETA');return}
+  if(r.error){toast(r.error.toUpperCase());return}
+  explorador.activo=true;explorador.ruta=r.ruta;document.body.classList.add('explorando');
+  const items=[];
+  if(r.padre)items.push({tipo:'atras',ruta:r.padre,nombre:'ATRÁS · '+r.padre.split(/[\\/]/).filter(Boolean).pop()});
+  const todo=[...r.carpetas.slice(0,20).map(c=>({tipo:'carpeta',ruta:c.ruta,nombre:c.nombre})),...r.imagenes.map(x=>({tipo:'imagen',ruta:x}))];
+  explorador.todo=todo;explorador.pag=0;explorador.base=items;pintarPagina();
+  $('ruta').textContent='◈ '+r.ruta.toUpperCase();
+  toast(`${r.nombre.toUpperCase()} · ${r.carpetas.length} CARPETAS · ${r.imagenes.length+r.mas_imagenes} IMÁGENES`);
+}
+const POR_PAG=22;  // 22 tarjetas + atrás/más/cerrar: fluido incluso en laptops modestas
+function pintarPagina(){
+  const e=explorador,ini=e.pag*POR_PAG,items=[...e.base];
+  if(e.pag>0)items.push({tipo:'atras',ruta:'#ant',nombre:'PÁGINA ANTERIOR'});
+  items.push(...e.todo.slice(ini,ini+POR_PAG));
+  if(ini+POR_PAG<e.todo.length)items.push({tipo:'mas',ruta:'#mas',nombre:`MÁS · ${e.todo.length-ini-POR_PAG}`});
+  items.push({tipo:'cerrar',ruta:'',nombre:'CERRAR'});
+  cargarItems(items);
+}
+function cerrarExplorador(){explorador.activo=false;document.body.classList.remove('explorando');mesa.innerHTML='';cards.length=0;abierta=null;$('nCards').textContent=0;toast('EXPLORADOR CERRADO')}
+function activar(c){
+  if(c.ruta==='#mas'){explorador.pag++;pintarPagina();return}
+  if(c.ruta==='#ant'){explorador.pag--;pintarPagina();return}
+  if(c.tipo==='carpeta'||c.tipo==='atras')explorar(c.ruta);
+  else if(c.tipo==='cerrar')cerrarExplorador();
+  else toggleAbrir(c);
+}
+function entrenando(ev){const e=$('entreno');e.classList.add('on');document.body.classList.add('escaneando');
+  if(ev.fase==='encendiendo'){$('entTxt').textContent='ENCENDIENDO CÁMARA…';$('entN').textContent='◈';$('entBar').style.width='0'}
+  else if(ev.fase==='preparar'){$('entTxt').textContent='PREPARA EL GESTO · '+String(ev.nombre).toUpperCase();$('entN').textContent=ev.seg??'';$('entBar').style.width='0'}
+  else{$('entTxt').textContent='MANTÉN EL GESTO QUIETO';$('entN').textContent=ev.pct+' %';$('entBar').style.width=ev.pct+'%'}
+  $('entSub').textContent='';clearTimeout(e._t);e._t=setTimeout(()=>{e.classList.remove('on');document.body.classList.remove('escaneando')},15000)}
+function entrenado(ev){const e=$('entreno');
+  if(ev.ok){$('entTxt').textContent='GESTO APRENDIDO';$('entN').textContent='✓';$('entBar').style.width='100%';$('entSub').textContent=String(ev.aviso||'').toUpperCase()}
+  else{$('entTxt').textContent='NO SE PUDO';$('entN').textContent='✗';$('entSub').textContent=String(ev.error||'').toUpperCase()}
+  clearTimeout(e._t);e._t=setTimeout(()=>{e.classList.remove('on');document.body.classList.remove('escaneando')},3500)}
+function usuario(){try{return String(CFG.config.usuario||'ROBERT').toUpperCase()}catch(e){return 'ROBERT'}}
+function escaneo(ev){
+  const e=$('escaneo');
+  if(ev.gesto==='escaneo_progreso'){
+    clearTimeout(esperaEscaneo);document.body.classList.add('escaneando');e.classList.remove('ok');e.classList.add('on');$('escTxt').textContent='ESCANEANDO BIOMETRÍA';$('escPct').textContent=ev.pct+' %';
+    (ev.manos||[]).forEach(([x,y],i)=>{const a=$(i?'anR':'anL');a.style.left=x*W+'px';a.style.top=y*H+'px'});
+  }else if(ev.gesto==='escaneo_cancelado'){e.classList.remove('on');document.body.classList.remove('escaneando')}
+  else if(ev.gesto==='escaneo'){
+    e.classList.add('on','ok');$('escTxt').textContent='IDENTIDAD CONFIRMADA · '+usuario();$('escPct').textContent='100 %';
+    setTimeout(()=>{e.classList.remove('on','ok');document.body.classList.remove('escaneando')},1100);
+    if(explorador.activo&&!carpetaPendiente)cerrarExplorador();else{explorar(carpetaPendiente);carpetaPendiente=null}
+  }
+}
+function activarManos(ev){
+  // LAY pidió el modo manos: espera el escaneo; si la cámara no manda manos, abre igual (se usa con el mouse)
+  carpetaPendiente=ev.carpeta||null;const e=$('escaneo');e.classList.remove('ok');e.classList.add('on');
+  $('escTxt').textContent='MUESTRA LAS DOS PALMAS A LA CÁMARA';$('escPct').textContent='◈';
+  clearTimeout(esperaEscaneo);esperaEscaneo=setTimeout(()=>{e.classList.remove('on');
+    if(Date.now()-ultimaMano>2500){toast('NO VEO TUS MANOS: USA EL MOUSE O REVISA LA CÁMARA');explorar(carpetaPendiente);carpetaPendiente=null}},6000);
+}
+
+/* ---------- gestos ---------- */
+const cursores={Left:{x:.5,y:.5},Right:{x:.5,y:.5}};
+let offset={x:0,y:0},rotBase=0;
+function gesto(ev){
+  const x=ev.x,y=ev.y;
+  switch(ev.gesto){
+    case 'pinch_inicio':{const c=cardEn(x,y);if(c){agarrada=c;ultimaActiva=c;offset={x:c.x-x,y:c.y-y};c.el.classList.add('agarrada');mesa.appendChild(c.el)}break}
+    case 'arrastrar':if(agarrada&&!rotando){agarrada.x=x+offset.x;agarrada.y=y+offset.y;pintar(agarrada)}
+      if(rotando){rotando.ry=rotBase+ev.dx*540;pintar(rotando)}break;
+    case 'rotar3d':if(agarrada){rotando=agarrada;rotBase=agarrada.ry;toast('ROTACIÓN 3D')}break;
+    case 'pinch_fin':soltar();break;
+    case 'tap':{soltar();const c=cardEn(x,y)||abierta;if(c){activar(c);ultimaActiva=c}break}
+    case 'escaneo_progreso':case 'escaneo':case 'escaneo_cancelado':escaneo(ev);break;
+    case 'doble_tap':{const c=cardEn(x,y);if(c&&c.ruta)enviar({tipo:'overlay.abrir_archivo',ruta:c.ruta});break}
+    case 'escalar':{const c=agarrada||abierta||cardEn(x,y)||ultimaActiva;if(c){c.s=Math.min(Math.max(c.s*ev.factor,.3),5);pintar(c)}break}
+    case 'clap':anillo();break;
+    case 'lanzar':{const c=cardEn(x,y)||abierta||ultimaActiva;if(c&&c.ruta){
+      // El hub decide el monitor vecino real (izq/der del monitor donde está el cursor)
+      c.el.classList.add('lanzada');enviar({tipo:'overlay.fling',ruta:c.ruta,direccion:ev.direccion});
+      toast({derecha:'→ MONITOR DERECHO',izquierda:'← MONITOR IZQUIERDO',arriba:'↑ MONITOR DE ARRIBA',abajo:'↓ MONITOR DE ABAJO'}[ev.direccion]||'→ OTRO MONITOR');setTimeout(()=>c.el.classList.remove('lanzada'),900)}break}
+    case 'modo':$('modo').textContent=ev.mouse?'MOUSE':'OVERLAY';toast(ev.mouse?'MODO MOUSE: controlas el escritorio':'MODO OVERLAY');
+      // En modo mouse el HUD a pantalla completa estorbaría: se minimiza y vuelve al salir
+      try{if(window.pywebview)ev.mouse?pywebview.api.minimizar():pywebview.api.restaurar()}catch(e){}break;
+    case 'scroll':{const dy=ev.pasos*.04;cards.forEach(c=>{if(!c.abierta){c.y-=dy;pintar(c)}});break}
+    case 'pausa':toast(ev.activo?'SEGUIMIENTO EN PAUSA':'SEGUIMIENTO ACTIVO');break;
+  }
+}
+function soltar(){if(agarrada)agarrada.el.classList.remove('agarrada');agarrada=null;rotando=null}
+
+/* ---------- dibujo de manos ---------- */
+const HUESOS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let manosPend=null,manosDib=false,tManos=0;
+function dibujarManos(manos){  // solo guarda: se dibuja una vez por cuadro de pantalla
+  tManos=Date.now();if(Object.keys(manos).length)ultimaMano=tManos;
+  if(!manosPend)requestAnimationFrame(()=>{pintarManos(manosPend);manosPend=null});manosPend=manos;
+}
+function pintarManos(manos){
+  const lados=Object.keys(manos||{});
+  if(!lados.length&&!manosDib)return;  // nada que borrar
+  ctx.clearRect(0,0,W,H);$('nManos').textContent=lados.length;manosDib=lados.length>0;
+  ['Left','Right'].forEach(l=>{$('c'+l).style.display=lados.includes(l)?'block':'none'});
+  if(!lados.length)return;
+  ctx.lineWidth=1.5;ctx.strokeStyle='rgba(101,244,255,.55)';ctx.fillStyle='#c9ffff';
+  ctx.beginPath();
+  for(const l of lados){const p=manos[l].map(([x,y])=>[x*W,y*H]);  // ya llega espejado desde gestos.py
+    HUESOS.forEach(([a,b])=>{ctx.moveTo(...p[a]);ctx.lineTo(...p[b])})}
+  ctx.stroke();ctx.beginPath();
+  for(const l of lados)manos[l].forEach(([x,y],i)=>{const r=i%4===0?3:2;ctx.moveTo(x*W+r,y*H);ctx.arc(x*W,y*H,r,0,7)});
+  ctx.fill();
+}
+// si la cámara se apaga o se cuelga, las manos NO se quedan congeladas en pantalla
+setInterval(()=>{if(manosDib&&Date.now()-tManos>700)pintarManos({})},350);
+document.addEventListener('visibilitychange',()=>document.body.classList.toggle('oculto',document.hidden));
+let hoverCard=null;
+function cursor(ev){
+  const el=$('c'+ev.mano);cursores[ev.mano]={x:ev.x,y:ev.y};
+  el.style.left=ev.x*W+'px';el.style.top=ev.y*H+'px';el.classList.toggle('pinch',ev.pinch);
+  const c=cardEn(ev.x,ev.y);if(c!==hoverCard){if(hoverCard)hoverCard.el.classList.remove('hover');if(c)c.el.classList.add('hover');hoverCard=c}
+}
+
+/* ---------- voz / HUD ---------- */
+function voz(ev){
+  document.body.classList.remove('escuchando','pensando','hablando','abierto');
+  if(ev.estado!=='standby')document.body.classList.add(ev.estado);
+  $('estadoVoz').textContent=ev.estado.toUpperCase();
+  if(ev.estado==='hablando'&&ev.texto)$('lay').textContent=ev.texto;
+}
+function esc(t){return String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function mostrarPanel(ev){
+  // Texto de correos = contenido externo: siempre escapado (nunca innerHTML crudo)
+  $('panelTitulo').textContent=(ev.titulo||'').toUpperCase();
+  $('panelItems').innerHTML=(ev.items||[]).map(i=>{const e=String(i.etiqueta||'');const urg=/hoy|urgente|vence/i.test(e);
+    return `<div class="it">${e?`<span class="e ${urg?'urg':''}">${esc(e.toUpperCase())}</span>`:''}<div class="t">${esc(i.titulo)}</div>${i.detalle?`<div class="d">${esc(i.detalle)}</div>`:''}</div>`}).join('');
+  const p=$('panel');p.classList.add('visible');clearTimeout(p._t);p._t=setTimeout(()=>p.classList.remove('visible'),(ev.segundos||25)*1000);
+}
+function toast(t){const e=$('toast');e.textContent=t;e.style.opacity=1;clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity=0,1600)}
+
+/* ---------- conexión ---------- */
+let ws;
+function enviar(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function conectar(){
+  ws=new WebSocket(`ws://${location.host||'127.0.0.1:8765'}/ws`);
+  ws.onopen=()=>{$('online').textContent='● ONLINE'};
+  ws.onclose=()=>{$('online').textContent='● RECONECTANDO';setTimeout(conectar,1500)};
+  ws.onmessage=m=>{const ev=JSON.parse(m.data);
+    switch(ev.tipo){
+      case 'manos':dibujarManos(ev.manos);break;
+      case 'manos.activar':activarManos(ev);break;
+      case 'gesto.entrenando':entrenando(ev);break;
+      case 'gesto.entrenado':entrenado(ev);break;
+      case 'gesto.propio':toast('✋ '+String(ev.nombre).toUpperCase()+' → '+String((ev.accion||{}).valor||'').toUpperCase());break;
+      case 'cursor':cursor(ev);break;
+      case 'gesto':gesto(ev);break;
+      case 'overlay.cargar':cargar(ev.rutas||[]);break;
+      case 'overlay.colocar':{const c=cards[ev.indice];if(c){c.x=ev.x;c.y=ev.y;c.s=ev.escala;pintar(c)}break}
+      case 'voz.estado':voz(ev);break;
+      case 'voz.transcripcion':$('yo').textContent='TÚ: '+ev.texto;break;
+      case 'remoto.comando':$('yo').textContent='REMOTO: '+ev.texto;break;
+      case 'hud.modelo':$('modelo').textContent=ev.nivel.toUpperCase()+' · '+ev.modelo.replace('claude-','');
+        $('modelo').className=ev.nivel==='profundo'?'opus':'status';document.body.classList.toggle('opus',ev.nivel==='profundo');break;
+      case 'hud.fps':$('fps').textContent=ev.reposo?'REPOSO':ev.fps+' FPS';$('fps').style.color=(ev.reposo||ev.fps>=25)?'':'var(--warn)';break;
+      case 'hud.camara':if(ev.pausada){$('fps').textContent='APAGADA';$('fps').style.color='';pintarManos({});break}if(!ev.ok){$('fps').textContent='SIN SEÑAL';$('fps').style.color='var(--warn)';toast('CÁMARA DESCONECTADA: reintentando')}break;
+      case 'hud.latencia':$('latencia').textContent=(ev.ms/1000).toFixed(1).replace('.',',')+' s';
+        $('latencia').style.color=ev.ms<1500?'':'var(--warn)';break;
+      case 'hud.panel':mostrarPanel(ev);if(ev.total)res('resDiag',`${ev.ok} de ${ev.total} pruebas OK`+(ev.ok<ev.total?' · revisa el panel':''),ev.ok===ev.total);break;
+      case 'hud.config':abrirConfig(ev.seccion);break;
+      case 'ia.progreso':progresoIA(ev);if(String(ev.etapa).startsWith('modelo:')||ev.etapa==='error')res('resMod',ev.texto+(ev.pct?` (${ev.pct} %)`:''),ev.etapa!=='error');if(ev.pct>=100&&$('config').classList.contains('abierto'))cargarModelos();break;
+      case 'chat.mensaje':agregarMsg(ev);break;
+      case 'hud.aviso':toast(String(ev.texto||'').toUpperCase());break;
+      case 'conocimiento.listo':toast(ev.ok?`APRENDÍ ${ev.fragmentos} FRAGMENTOS`:'NO PUDE LEERLO');res('resCon',ev.ok?`Listo: ${ev.archivos} archivo(s), ${ev.fragmentos} fragmentos.`:(ev.error||'Error'),!!ev.ok);cargarConocimiento();break;
+      case 'ia.lista':progresoIA({pct:100,texto:'✓ IA local lista'});estadoIA();toast('IA LOCAL LISTA');break;
+      case 'ia.error':res('localProg',ev.detalle,false);$('instalarIA').disabled=false;break;
+      case 'aplausos':if(ev.n===2){try{window.pywebview&&pywebview.api.restaurar()}catch(e){}toast('👏👏 AQUÍ ESTOY')}else toast('👏👏👏 '+(ev.accion||''));break;
+      case 'hud.error':toast('ERROR: '+ev.detalle.slice(0,60));break;
+      case 'hud.herramienta':$('tool').textContent=ev.nombre;break;
+    }};
+}
+
+/* ---------- Configuración (todo dentro de la app; se guarda en ~/.lay) ---------- */
+let CFG=null;
+const AYUDA_CLAVE={gemini:['Clave de Gemini','Gratis y sin tarjeta en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com</a> → Get API key.','GEMINI_API_KEY'],
+  groq:['Clave de Groq','Gratis y sin tarjeta en <a href="https://console.groq.com/keys" target="_blank">console.groq.com</a> → API Keys.','GROQ_API_KEY'],
+  anthropic:['Clave de Claude (de pago)','En console.anthropic.com → API Keys. Cobra por uso.','ANTHROPIC_API_KEY']};
+const DESC={nucleo:'IA propia de LAY · hecha desde cero · instantánea · sin internet ni instalación · entiende órdenes',ollama:'Gratis · privada · sin internet',gemini:'Gratis con clave · muy capaz',groq:'Gratis con clave · muy rápida',anthropic:'De pago · la más capaz'};
+async function api(ruta,cuerpo){const r=await fetch(ruta,cuerpo===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cuerpo)});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||j.error||('HTTP '+r.status));return j}
+function res(id,txt,ok){const e=$(id);e.textContent=txt;e.className='res '+(ok===true?'ok':ok===false?'mal':'')}
+async function listarGestos(){try{const r=await api('/api/gestos');
+  $('gLista').innerHTML=(r.gestos||[]).length?r.gestos.map(g=>`<div class="gl"><span><b>${esc(g.nombre)}</b> → ${esc(g.accion.valor)}</span><button data-borrar="${esc(g.nombre)}">borrar</button></div>`).join(''):'<div class="sub">Aún no tienes gestos propios.</div>';
+  document.querySelectorAll('[data-borrar]').forEach(b=>b.onclick=async()=>{await api('/api/gestos/borrar',{nombre:b.dataset.borrar});listarGestos()})}catch(e){}}
+$('camOn').onclick=()=>api('/api/camara',{accion:'encender'}).then(()=>toast('CÁMARA ENCENDIDA'));
+$('camOff').onclick=()=>api('/api/camara',{accion:'apagar'}).then(()=>toast('CÁMARA APAGADA'));
+$('camInicio').onchange=()=>api('/api/config',{camara:{al_inicio:$('camInicio').checked}});
+$('gGrabar').onclick=async()=>{const orden=$('gOrden').value.trim();if(!orden){res('resG','Escribe qué debe hacer el gesto.',false);return}
+  try{await api('/api/gestos/entrenar',{orden,nombre:$('gNombre').value.trim()||orden});res('resG','Mira la cámara: cuenta regresiva y luego mantén el gesto.',true);cerrarConfig()}catch(e){res('resG',e.message,false)}};
+/* ---------- modo chat ---------- */
+let INTENCIONES=[],chatCargado=false;
+function alternarChat(forzar){const c=$('chat');const on=forzar??!c.classList.contains('on');c.classList.toggle('on',on);
+  if(on){if(!chatCargado)cargarChat();setTimeout(()=>$('chatTxt').focus(),50)}}
+async function cargarChat(){chatCargado=true;try{const r=await api('/api/chat');$('chatLista').innerHTML='';(r.mensajes||[]).forEach(m=>agregarMsg(m,true));
+  const a=await api('/api/aprendizaje');INTENCIONES=a.intenciones||[]}catch(e){}bajarChat()}
+function bajarChat(){const l=$('chatLista');l.scrollTop=l.scrollHeight}
+let ultimoUsuario='';
+function agregarMsg(m,historico){
+  if(!chatCargado&&!historico)return;
+  const d=document.createElement('div');d.className='msg '+(m.rol==='usuario'?'usuario':'lay');d.textContent=m.texto||'';
+  if(m.rol==='usuario')ultimoUsuario=m.texto||'';
+  else{const meta=document.createElement('div');meta.className='meta';const frase=ultimoUsuario;
+    const via=String(m.via||'').replace(/^nucleo:.*/,'LAY Núcleo');
+    meta.innerHTML=(via?`<span>${esc(via)}</span>`:'')+(m.segundos!=null?`<span>${m.segundos} s</span>`:'')+(m.aprendio?'<span>✓ aprendió esta frase</span>':'')
+      +(m.entendido?`<span>entendí: ${esc(m.entendido.intencion)}</span>`:'');
+    if(frase&&INTENCIONES.length){const sel=document.createElement('select');sel.innerHTML='<option value="">corregir…</option>'+INTENCIONES.map(i=>`<option>${i}</option>`).join('');
+      sel.onchange=async()=>{if(!sel.value)return;const r=await api('/api/aprendizaje/corregir',{frase,intencion:sel.value});toast(r.ok?'CORREGIDO: APRENDIENDO':'NO SE PUDO');sel.disabled=true};meta.appendChild(sel)}
+    d.appendChild(meta)}
+  $('chatLista').appendChild(d);bajarChat();
+}
+$('btnChat').onclick=()=>alternarChat();$('chatCerrar').onclick=()=>alternarChat(false);
+$('chatForm').onsubmit=async e=>{e.preventDefault();const t=$('chatTxt').value.trim();if(!t)return;$('chatTxt').value='';try{await api('/api/comando',{texto:t})}catch(err){toast('LAY NO RESPONDE')}};
+
+/* ---------- aprendizaje ---------- */
+async function cargarAprendizaje(){try{const r=await api('/api/aprendizaje');INTENCIONES=r.intenciones||INTENCIONES;
+  res('apEstado',`${r.frases_aprendidas} frases aprendidas · ${r.atajos} atajos${r.entrenando?' · entrenando…':''}${r.modelo_personal?' · usando tu modelo personal':''}`,true);
+  $('atLista').innerHTML=Object.entries(r.atajos||{}).map(([f,o])=>`<div class="gl"><span><b>${esc(f)}</b> → ${esc(o.join(' · '))}</span><button data-olvidar="${esc(f)}">borrar</button></div>`).join('')||'<div class="sub">Sin atajos todavía.</div>';
+  document.querySelectorAll('[data-olvidar]').forEach(b=>b.onclick=async()=>{await api('/api/aprendizaje/atajo',{frase:b.dataset.olvidar,borrar:true});cargarAprendizaje()});
+  $('apLista').innerHTML=(r.recientes||[]).map(e=>`<div class="gl"><span>"${esc(e.texto)}" → <b>${esc(e.intencion)}</b></span><span class="sub">${esc(e.origen)}</span></div>`).join('')||'<div class="sub">Todavía nada: aprende mientras la usas.</div>'}catch(e){}}
+$('atGuardar').onclick=async()=>{try{const r=await api('/api/aprendizaje/atajo',{frase:$('atFrase').value,ordenes:$('atOrdenes').value});res('resAt',r.ok?'Guardado: '+r.ordenes.join(' · '):r.error,!!r.ok);cargarAprendizaje()}catch(e){res('resAt',e.message,false)}};
+$('apReentrenar').onclick=async()=>{await api('/api/aprendizaje/reentrenar',{});res('resAt','Entrenando en segundo plano (≈15 s)…',true);setTimeout(cargarAprendizaje,16000)};
+
+/* ---------- personalidad ---------- */
+let persActiva='neutral';
+async function cargarPersonalidad(){try{const r=await api('/api/personalidades');persActiva=r.activa;
+  $('persLista').innerHTML=r.personalidades.map(p=>`<label class="pers ${p.clave===r.activa?'act':''}" data-p="${esc(p.clave)}"><b>${esc(p.nombre)}</b>${p.propia?' · propia':''}${p.ejemplos?` · ${p.ejemplos} ejemplos`:''}<br><span class="sub">${esc(p.descripcion)}</span></label>`).join('');
+  document.querySelectorAll('[data-p]').forEach(l=>l.onclick=async()=>{await api('/api/personalidades',{accion:'activar',clave:l.dataset.p});toast('PERSONALIDAD: '+l.dataset.p.toUpperCase());cargarPersonalidad()})}catch(e){}}
+$('persCrear').onclick=async()=>{const r=await api('/api/personalidades',{accion:'crear',nombre:$('persNombre').value,descripcion:$('persDesc').value});res('resPers',r.ok?'Creada y activa.':r.error,!!r.ok);cargarPersonalidad()};
+$('persEj').onclick=async()=>{const r=await api('/api/personalidades',{accion:'ejemplo',clave:persActiva,tu:$('persTu').value,lay:$('persLay').value});res('resPers',r.ok?`Ejemplo agregado (${r.ejemplos}).`:r.error,!!r.ok);$('persTu').value=$('persLay').value='';cargarPersonalidad()};
+
+/* ---------- conocimiento ---------- */
+async function cargarConocimiento(){try{const r=await api('/api/conocimiento');
+  $('conModo').textContent=r.semantico?'Búsqueda por significado activa (embeddings).':'Búsqueda por palabras. Para buscar por significado descarga "nomic-embed-text" en Modelos locales.';
+  if(r.leyendo)res('resCon',`Leyendo ${r.leyendo[0]} (${r.leyendo[1]}/${r.leyendo[2]})…`,true);
+  $('conLista').innerHTML=(r.fuentes||[]).map(f=>`<div class="gl"><span><b>${esc(f.nombre)}</b> · ${f.fragmentos} fragmentos</span><button data-fuente="${esc(f.nombre)}">olvidar</button></div>`).join('')||'<div class="sub">Aún no le diste nada para leer.</div>';
+  document.querySelectorAll('[data-fuente]').forEach(b=>b.onclick=async()=>{await api('/api/conocimiento/borrar',{fuente:b.dataset.fuente});cargarConocimiento()})}catch(e){}}
+$('conAgregar').onclick=async()=>{const r=await api('/api/conocimiento/agregar',{ruta:$('conRuta').value});res('resCon',r.ok?'Leyendo… te aviso al terminar (un libro grande tarda unos minutos).':r.error,!!r.ok)};
+$('conBuscar').onclick=async()=>{const r=await api('/api/conocimiento/buscar',{pregunta:$('conPregunta').value});
+  $('conRes').innerHTML=(r.fragmentos||[]).map(f=>`<div class="gl" style="display:block"><b>${esc(f.fuente)} ${esc(f.ubic||'')}</b><div class="sub">${esc(f.texto.slice(0,320))}…</div></div>`).join('')||'<div class="sub">Nada relacionado.</div>'};
+
+/* ---------- modelos locales ---------- */
+async function cargarModelos(){try{const r=await api('/api/modelos');const uso=JSON.stringify(r.en_uso||{});
+  if(!r.activo)res('resMod','Ollama está apagado o no instalado: instálalo desde Inteligencia.',false);
+  $('modInst').innerHTML=(r.instalados||[]).map(m=>`<div class="gl"><span><b>${esc(m.nombre)}</b> · ${m.gb} GB ${esc(m.parametros||'')}${uso.includes('"'+m.nombre+'"')?' · EN USO':''}</span><span><button data-usar="${esc(m.nombre)}" style="border-color:rgba(101,244,255,.5);color:var(--cyan)">usar</button> <button data-borrarm="${esc(m.nombre)}">borrar</button></span></div>`).join('')||'<div class="sub">Ninguno.</div>';
+  const inst=(r.instalados||[]).map(m=>m.nombre.replace(/:latest$/,''));
+  $('modSug').innerHTML=r.sugeridos.map(m=>`<div class="gl"><span><b>${esc(m.nombre)}</b> · ${m.gb} GB<br><span class="sub">${esc(m.para)}</span></span>${inst.includes(m.nombre)?'<span class="sub">instalado</span>':`<button data-bajar="${esc(m.nombre)}" style="border-color:rgba(101,244,255,.5);color:var(--cyan)">descargar</button>`}</div>`).join('');
+  document.querySelectorAll('[data-usar]').forEach(b=>b.onclick=async()=>{await api('/api/modelos/usar',{nombre:b.dataset.usar});res('resMod','LAY conversa ahora con '+b.dataset.usar,true);cargarModelos()});
+  document.querySelectorAll('[data-borrarm]').forEach(b=>b.onclick=async()=>{const x=await api('/api/modelos/borrar',{nombre:b.dataset.borrarm});res('resMod',x.ok?'Borrado.':x.error,!!x.ok);cargarModelos()});
+  document.querySelectorAll('[data-bajar]').forEach(b=>b.onclick=()=>bajarModelo(b.dataset.bajar))}catch(e){res('resMod',e.message,false)}}
+async function bajarModelo(n){try{await api('/api/modelos/descargar',{nombre:n});res('resMod','Descargando '+n+'…',true)}catch(e){res('resMod',e.message,false)}}
+$('modBajar').onclick=()=>bajarModelo($('modNombre').value.trim());
+
+/* ---------- permisos ---------- */
+async function cargarPermisos(){try{const r=await api('/api/permisos');if(!r.windows){$('permEstado').innerHTML='<div class="sub">Solo en Windows.</div>';return}
+  const f=(ok,t)=>`<div class="gl"><span>${ok?'✓':'✗'} ${esc(t)}</span></div>`;
+  $('permEstado').innerHTML=f(r.es_admin,r.es_admin?'LAY corre como administrador':'LAY corre sin privilegios de administrador')+f(r.camara_permitida,'Cámara permitida')+f(r.microfono_permitido,'Micrófono permitido')+f(!r.acceso_controlado_carpetas,'Sin bloqueo de "Acceso controlado a carpetas"')+f(r.modo_admin_configurado,'Modo administrador al iniciar Windows')
+    +(r.avisos||[]).map(a=>`<div class="sub" style="color:var(--warn)">${esc(a)}</div>`).join('')}catch(e){}}
+const perm=a=>async()=>{const r=await api('/api/permisos',{accion:a});res('resPerm',r.ok?(r.nota||'Listo.'):r.error,!!r.ok);setTimeout(cargarPermisos,4000)};
+$('permActivar').onclick=perm('activar');$('permAhora').onclick=perm('ahora');$('permQuitar').onclick=perm('desactivar');
+
+async function abrirConfig(tab){
+  $('config').classList.add('abierto');if(tab)mostrarTab(tab);
+  try{CFG=await api('/api/config')}catch(e){return}
+  const c=CFG.config;$('cfgVersion').textContent='LAY v'+CFG.version;
+  $('provs').innerHTML=Object.entries(CFG.proveedores).map(([k,n])=>`<label><input type="radio" name="prov" value="${k}" ${c.ia.proveedor===k?'checked':''}><b>${esc(n)}</b><span>${DESC[k]||''}${CFG.secretos[(AYUDA_CLAVE[k]||[])[2]]?' · clave ✓':''}</span></label>`).join('');
+  document.querySelectorAll('input[name=prov]').forEach(r=>r.onchange=pintarClave);pintarClave();
+  $('respaldoPago').checked=!!c.ia.respaldo_pago;$('hibrido').checked=c.ia.hibrido!==false;
+  $('bbActual').textContent=CFG.blackboard_url?'· actual: '+CFG.blackboard_url:'· sin configurar';
+  res('resGmail',CFG.gmail_configurado?'Credenciales de Gmail cargadas ✓':'',true);
+  $('outlookId').placeholder=CFG.secretos.OUTLOOK_CLIENT_ID?'(configurado — escribe para cambiarlo)':'00000000-0000-0000-0000-000000000000';
+  $('apActivo').checked=c.aplausos.activo;$('apSens').value=c.aplausos.sensibilidad;$('apSensV').textContent=Math.round(c.aplausos.sensibilidad*100)+'%';
+  $('apTriple').innerHTML=[['','Nada']].concat(Object.keys(c.workspaces||{}).map(w=>['workspace:'+w,'Workspace "'+w+'"']),Object.keys(c.apps||{}).map(a=>['app:'+a,'Abrir '+a])).map(([v,t])=>`<option value="${esc(v)}" ${c.aplausos.accion_triple===v?'selected':''}>${esc(t)}</option>`).join('');
+  $('usuario').value=c.usuario||'';$('vozTts').innerHTML=CFG.voces.map(v=>`<option ${v===c.voz_tts?'selected':''}>${v}</option>`).join('');
+  $('wake').value=c.confianza_wake;$('wakeV').textContent=Math.round(c.confianza_wake*100)+'%';$('camara').value=c.camara_indice;$('navPerfil').value=c.navegador_perfil||'propio';$('micro').value=c.microfono??'';
+  $('soloTs').checked=c.remoto.solo_tailscale!==false;
+  $('camInicio').checked=!!(c.camara&&c.camara.al_inicio);listarGestos();
+  estadoIA();infoRemoto();
+}
+function cerrarConfig(){$('config').classList.remove('abierto')}
+function mostrarTab(t){({aprendizaje:cargarAprendizaje,personalidad:cargarPersonalidad,conocimiento:cargarConocimiento,modelos:cargarModelos,permisos:cargarPermisos}[t]||(()=>{}))();document.querySelectorAll('.cfg nav button[data-tab]').forEach(b=>b.classList.toggle('act',b.dataset.tab===t));
+  document.querySelectorAll('.cfg section').forEach(s=>s.classList.toggle('act',s.dataset.sec===t))}
+function provElegido(){return (document.querySelector('input[name=prov]:checked')||{}).value||'ollama'}
+function pintarClave(){const p=provElegido(),a=AYUDA_CLAVE[p];$('claveBox').style.display=a?'block':'none';$('localBox').style.display=p==='ollama'?'block':'none';
+  if(a){$('claveEt').textContent=a[0]+(CFG.secretos[a[2]]?' (ya configurada — escribe para cambiarla)':'');$('claveAyuda').innerHTML=a[1];$('clave').value=''}}
+async function guardar(config,secretos,idRes){try{CFG=await api('/api/config',{config,secretos});res(idRes,'Guardado ✓',true);return true}catch(e){res(idRes,e.message,false)}}
+$('diagnostico').onclick=async()=>{res('resDiag','Probando… (hasta 1 minuto). Los resultados salen en el panel derecho.');$('diagnostico').disabled=true;
+  try{await api('/api/diagnostico',{});}catch(e){res('resDiag',e.message,false)}setTimeout(()=>$('diagnostico').disabled=false,20000)};
+async function estadoIA(){
+  try{const e=await api('/api/ia/estado'),h=e.hardware,r=e.recomendacion;
+    $('localInfo').innerHTML=`Tu PC: <b>${h.ram_gb} GB</b> de RAM${h.vram_gb?` · GPU <b>${h.vram_gb} GB</b>`:''} · ${h.disco_libre_gb} GB libres<br>`+
+      `Recomendado: <b>${r.descargar.join(' + ')}</b> (~${r.descarga_gb} GB) — ${esc(r.motivo)}<br>`+
+      (e.listo?'<span style="color:#5dffb0">✓ Lista y funcionando</span>':e.ollama_activo?`Faltan modelos: ${e.faltan.join(', ')}`:e.ollama_instalado?'Ollama instalado pero apagado':'Ollama no está instalado');
+    $('instalarIA').disabled=e.listo;$('instalarIA').textContent=e.listo?'Instalada ✓':e.ollama_instalado?'Descargar modelos':`Instalar IA local (~${r.descarga_gb} GB)`;
+    return e}catch(err){$('localInfo').textContent='No pude revisar la PC: '+err.message}
+}
+async function infoRemoto(){try{const r=await api('/api/remoto/info');
+  $('remInfo').innerHTML=(r.activo?'<span style="color:#5dffb0">● Activado</span>':'○ Desactivado')+' · '+(r.tailscale_ip?`Tailscale: <b>${r.tailscale_ip}</b>`:'Tailscale no detectado en esta PC')+(r.token_configurado?' · token ✓':'');
+  if(r.activo&&r.tailscale_ip&&r.token_configurado){$('qr').src='/api/remoto/qr?'+Date.now();$('qr').style.display='block'}else $('qr').style.display='none'}catch(e){}}
+$('engranaje').onclick=()=>abrirConfig();
+document.querySelectorAll('[data-cerrar]').forEach(b=>b.onclick=cerrarConfig);
+$('config').onclick=e=>{if(e.target.id==='config')cerrarConfig()};
+document.querySelectorAll('.cfg nav button[data-tab]').forEach(b=>b.onclick=()=>mostrarTab(b.dataset.tab));
+$('guardarIA').onclick=async()=>{const p=provElegido(),a=AYUDA_CLAVE[p],sec={};if(a&&$('clave').value.trim())sec[a[2]]=$('clave').value.trim();
+  if(a&&!sec[a[2]]&&!CFG.secretos[a[2]])return res('resIA','Falta la clave para '+CFG.proveedores[p],false);
+  await guardar({ia:{proveedor:p,respaldo_pago:$('respaldoPago').checked,hibrido:$('hibrido').checked}},sec,'resIA')};
+$('probarIA').onclick=async()=>{res('resIA','Probando…');const r=await api('/api/probar/ia',{proveedor:provElegido()}).catch(e=>({ok:false,error:e.message}));
+  res('resIA',r.ok?`Responde en ${(r.ms/1000).toFixed(1).replace('.',',')} s: "${r.respuesta}"`:r.error,r.ok)};
+$('instalarIA').onclick=async()=>{$('instalarIA').disabled=true;$('localBarra').style.display='block';res('localProg','Preparando…');
+  try{await api('/api/ia/preparar',{})}catch(e){res('localProg',e.message,false);$('instalarIA').disabled=false}};
+$('guardarBB').onclick=()=>{const u=$('bbUrl').value.trim();if(!u)return res('resBB','Pega el enlace primero',false);guardar(null,{BLACKBOARD_ICS_URL:u},'resBB').then(()=>{$('bbUrl').value='';abrirConfig('universidad')})};
+$('probarBB').onclick=async()=>{res('resBB','Leyendo calendario…');const r=await api('/api/probar/blackboard',{url:$('bbUrl').value.trim()}).catch(e=>({ok:false,error:e.message}));
+  res('resBB',r.ok?`✓ ${r.eventos} eventos. Próximos: `+(r.proximos.map(p=>p.titulo+' ('+p.fecha+')').join(' · ')||'ninguno'):r.error,r.ok)};
+$('gmailJson').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{await api('/api/gmail/credenciales',JSON.parse(await f.text()));res('resGmail','Credenciales guardadas ✓ La primera vez que pidas tus correos se abrirá Google para autorizar.',true)}catch(err){res('resGmail',err.message,false)}};
+$('guardarCorreo').onclick=()=>{const id=$('outlookId').value.trim();if(!id)return res('resCorreo','Nada que guardar',null);guardar(null,{OUTLOOK_CLIENT_ID:id},'resCorreo')};
+$('apSens').oninput=()=>$('apSensV').textContent=Math.round($('apSens').value*100)+'%';
+$('wake').oninput=()=>$('wakeV').textContent=Math.round($('wake').value*100)+'%';
+$('guardarAp').onclick=()=>guardar({aplausos:{activo:$('apActivo').checked,sensibilidad:+$('apSens').value,accion_triple:$('apTriple').value}},null,'resAp');
+$('guardarVoz').onclick=()=>guardar({usuario:$('usuario').value.trim()||'Robert',voz_tts:$('vozTts').value,confianza_wake:+$('wake').value,camara_indice:+$('camara').value||0,microfono:$('micro').value===''?null:+$('micro').value,navegador_perfil:$('navPerfil').value},null,'resVoz');
+$('activarRem').onclick=async()=>{try{const r=await api('/api/remoto/token',{});await guardar({remoto:{activo:true,solo_tailscale:$('soloTs').checked}},null,'resRem');
+  res('resRem','Token nuevo creado (el anterior deja de servir). '+r.aviso,true);infoRemoto()}catch(e){res('resRem',e.message,false)}};
+$('desactivarRem').onclick=async()=>{await guardar({remoto:{activo:false}},null,'resRem');infoRemoto()};
+function progresoIA(ev){$('localBarra').style.display='block';$('localBarra').firstElementChild.style.width=ev.pct+'%';res('localProg',ev.texto)}
+// Primera vez en una PC nueva: si la IA elegida no está lista, abre Configuración sola
+async function primeraVez(){try{const c=await api('/api/config');if(c.config.ia.proveedor!=='ollama')return;const e=await api('/api/ia/estado');
+  if(!e.listo){abrirConfig('ia');toast('BIENVENIDO: INSTALA LA IA GRATIS PARA EMPEZAR')}}catch(e){}}
+setTimeout(primeraVez,1200);
+conectar();
+setTimeout(()=>$('ayuda').classList.add('oculta'),15000);  // visible 15 s al abrir; D la muestra/oculta
+addEventListener('keydown',e=>{if(e.target.closest&&e.target.closest('#config,#chat'))return;if(e.key==='t'){e.preventDefault();alternarChat();return}if(e.key==='c')abrirConfig();if(e.key==='Escape'){cerrarConfig();enviar({tipo:'voz.callar'});$('panel').classList.remove('visible')}if(e.key==='r')grilla();if(e.key==='e')explorador.activo?cerrarExplorador():explorar(null);if(e.key==='Backspace'&&explorador.activo){const a=cards.find(c=>c.tipo==='atras');if(a)explorar(a.ruta)}if(e.key==='d'){$('ayuda').classList.toggle('oculta')}});
+/* Ratón como respaldo para probar sin cámara */
+// clic corto = como TAP (entrar a carpeta / ampliar) · doble clic = abrir en Windows · arrastrar = mover
+let mdown=false,abajo=null,clicPend=null;
+const enUI=e=>e.target.closest&&e.target.closest('#config,#engranaje,#panel');
+addEventListener('mousedown',e=>{if(enUI(e)||e.button!==0)return;mdown=true;abajo={x:e.clientX,y:e.clientY,t:Date.now()};gesto({gesto:'pinch_inicio',x:e.clientX/W,y:e.clientY/H})});
+addEventListener('mousemove',e=>{if(mdown)gesto({gesto:'arrastrar',x:e.clientX/W,y:e.clientY/H,dx:0})});
+addEventListener('mouseup',e=>{if(!mdown)return;mdown=false;gesto({gesto:'pinch_fin'});
+  if(abajo&&Math.hypot(e.clientX-abajo.x,e.clientY-abajo.y)<6&&Date.now()-abajo.t<400){
+    const x=e.clientX/W,y=e.clientY/H;clearTimeout(clicPend);clicPend=setTimeout(()=>gesto({gesto:'tap',x,y}),260)}});
+addEventListener('dblclick',e=>{if(enUI(e))return;clearTimeout(clicPend);gesto({gesto:'doble_tap',x:e.clientX/W,y:e.clientY/H})});
+addEventListener('wheel',e=>!enUI(e)&&gesto({gesto:'escalar',factor:e.deltaY<0?1.08:.92,x:e.clientX/W,y:e.clientY/H}));
+</script>
+</body>
+</html>
